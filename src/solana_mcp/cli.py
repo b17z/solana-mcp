@@ -4,9 +4,11 @@ Commands:
 - build: Full pipeline (download + compile + index)
 - download: Clone repositories
 - compile: Extract Rust to JSON
-- index: Build vector embeddings
+- index: Build vector embeddings (incremental by default)
+- update: Git pull + incremental index
 - search: Search the index
 - status: Check index status
+- models: List available embedding models
 """
 
 import sys
@@ -14,6 +16,7 @@ from pathlib import Path
 
 import click
 
+from .config import DEFAULT_EMBEDDING_MODEL, EMBEDDING_MODELS, get_model_info, load_config
 from .indexer.chunker import chunk_all_simds, chunk_content
 from .indexer.compiler import (
     compile_c,
@@ -29,7 +32,14 @@ from .indexer.downloader import (
     download_repos,
     list_downloaded_repos,
 )
-from .indexer.embedder import DEPS_AVAILABLE, build_index, get_index_stats, search
+from .indexer.embedder import (
+    DEPS_AVAILABLE,
+    IncrementalEmbedder,
+    build_index,
+    get_index_stats,
+    search,
+)
+from .indexer.manifest import load_manifest
 
 
 @click.group()
@@ -47,8 +57,9 @@ def main(ctx, data_dir: Path):
 
 
 @main.command()
+@click.option("--full", is_flag=True, help="Force full rebuild")
 @click.pass_context
-def build(ctx):
+def build(ctx, full: bool):
     """Full build pipeline: download, compile, and index."""
     data_dir = ctx.obj["data_dir"]
 
@@ -70,7 +81,7 @@ def build(ctx):
 
     # Step 3: Index
     click.echo("\n[3/3] Building vector index...")
-    ctx.invoke(index)
+    ctx.invoke(index, full=full)
 
     click.echo("\n" + "=" * 60)
     click.echo("BUILD COMPLETE")
@@ -204,9 +215,12 @@ def compile(ctx):
 
 
 @main.command()
+@click.option("--full", is_flag=True, help="Force full rebuild")
+@click.option("--dry-run", is_flag=True, help="Show what would change without indexing")
+@click.option("--model", "model_name", help="Embedding model to use")
 @click.pass_context
-def index(ctx):
-    """Build vector embeddings index."""
+def index(ctx, full: bool, dry_run: bool, model_name: str | None):
+    """Build vector embeddings index (incremental by default)."""
     if not DEPS_AVAILABLE:
         click.echo("Error: Embedding dependencies not installed.")
         click.echo("Run: pip install lancedb sentence-transformers")
@@ -214,6 +228,15 @@ def index(ctx):
 
     data_dir = ctx.obj["data_dir"]
     compiled_dir = data_dir / "compiled"
+
+    # Load config
+    config = load_config(data_dir=data_dir)
+    model = model_name or config.embedding.model
+
+    # Validate model
+    if model not in EMBEDDING_MODELS:
+        click.echo(f"Warning: Unknown model '{model}', using default")
+        model = DEFAULT_EMBEDDING_MODEL
 
     all_chunks = []
 
@@ -243,11 +266,91 @@ def index(ctx):
         click.echo("No content to index. Run 'download' and 'compile' first.")
         return
 
+    # Build file tracking maps
+    current_files: dict[str, Path] = {}
+    file_types: dict[str, str] = {}
+
+    for chunk in all_chunks:
+        if chunk.source_file not in current_files:
+            # Try to find actual file path
+            abs_path = data_dir / chunk.source_file
+            if abs_path.exists():
+                current_files[chunk.source_file] = abs_path
+                file_types[chunk.source_file] = chunk.source_type
+
+    if dry_run:
+        click.echo("\n[DRY RUN] Analyzing changes...")
+        embedder = IncrementalEmbedder(
+            data_dir=data_dir,
+            model_name=model,
+        )
+        result = embedder.dry_run(current_files, file_types)
+        click.echo(result.summary())
+        if result.files_to_add:
+            click.echo(f"  Files to add: {', '.join(result.files_to_add[:5])}")
+            if len(result.files_to_add) > 5:
+                click.echo(f"    ... and {len(result.files_to_add) - 5} more")
+        if result.files_to_modify:
+            click.echo(f"  Files to modify: {', '.join(result.files_to_modify[:5])}")
+        if result.files_to_delete:
+            click.echo(f"  Files to delete: {', '.join(result.files_to_delete[:5])}")
+        return
+
     click.echo(f"\nIndexing {len(all_chunks)} total chunks...")
-    stats = build_index(all_chunks, data_dir=data_dir, progress_callback=click.echo)
+
+    # Use legacy build_index for now (chunks are already prepared)
+    stats = build_index(
+        all_chunks,
+        data_dir=data_dir,
+        model_name=model,
+        progress_callback=click.echo,
+    )
 
     click.echo(f"\nIndex built: {stats['chunks_indexed']} chunks")
     click.echo(f"Database: {stats['db_path']}")
+
+
+@main.command()
+@click.option("--full", is_flag=True, help="Force full rebuild after update")
+@click.pass_context
+def update(ctx, full: bool):
+    """Update repos and re-index incrementally."""
+    data_dir = ctx.obj["data_dir"]
+
+    click.echo("Updating repositories...")
+
+    # Pull all repos
+    repos = list_downloaded_repos(data_dir)
+    updated = []
+
+    for name, info in repos.items():
+        if info["exists"]:
+            repo_path = data_dir / name
+            click.echo(f"  Pulling {name}...")
+            try:
+                import subprocess
+
+                result = subprocess.run(
+                    ["git", "pull", "--ff-only"],
+                    cwd=repo_path,
+                    capture_output=True,
+                    text=True,
+                )
+                if "Already up to date" not in result.stdout:
+                    updated.append(name)
+                    click.echo("    Updated")
+                else:
+                    click.echo("    Up to date")
+            except Exception as e:
+                click.echo(f"    Failed: {e}")
+
+    if updated:
+        click.echo(f"\nUpdated: {', '.join(updated)}")
+        click.echo("Re-compiling and re-indexing...")
+        ctx.invoke(compile)
+        ctx.invoke(index, full=full)
+    else:
+        click.echo("\nNo updates found")
 
 
 @main.command("search")
@@ -388,6 +491,17 @@ def status(ctx):
     else:
         click.echo("  Not compiled yet")
 
+    # Check manifest
+    click.echo("\nManifest:")
+    manifest = load_manifest(data_dir / "manifest.json")
+    if manifest:
+        click.echo(f"  Version: {manifest.version}")
+        click.echo(f"  Updated: {manifest.updated_at}")
+        click.echo(f"  Model: {manifest.embedding_model}")
+        click.echo(f"  Files tracked: {len(manifest.files)}")
+    else:
+        click.echo("  No manifest (full build needed)")
+
     # Check index
     click.echo("\nIndex:")
     if DEPS_AVAILABLE:
@@ -400,6 +514,13 @@ def status(ctx):
             click.echo("  Not indexed yet")
     else:
         click.echo("  Dependencies not installed")
+
+
+@main.command()
+@click.argument("model", required=False)
+def models(model: str | None):
+    """List available embedding models."""
+    click.echo(get_model_info(model))
 
 
 if __name__ == "__main__":

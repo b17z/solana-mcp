@@ -4,13 +4,16 @@ Handles:
 - Rust code (functions, structs, enums)
 - SIMD markdown documents
 - Documentation markdown
+
+Supports incremental indexing via deterministic chunk IDs.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from .compiler import ExtractedConstant, ExtractedItem
+from .manifest import generate_chunk_id
 
 
 @dataclass
@@ -23,6 +26,7 @@ class Chunk:
     source_name: str  # function name, SIMD number, doc title
     line_number: int | None
     metadata: dict
+    chunk_id: str = ""  # Unique ID for incremental indexing
 
 
 def chunk_rust_item(item: ExtractedItem, repo_name: str = "agave") -> Chunk:
@@ -358,7 +362,83 @@ def chunk_content(
             for chunk in doc_chunks:
                 all_chunks.extend(split_large_chunk(chunk, max_tokens))
 
+    # Assign chunk IDs
+    all_chunks = _assign_chunk_ids(all_chunks)
+
     return all_chunks
+
+
+def _assign_chunk_ids(chunks: list[Chunk], project: str = "sol") -> list[Chunk]:
+    """
+    Assign unique chunk IDs to a list of chunks.
+
+    Groups chunks by source file and assigns sequential IDs within each file.
+    """
+    # Group chunks by source file
+    file_chunks: dict[str, list[tuple[int, Chunk]]] = {}
+    for i, chunk in enumerate(chunks):
+        key = f"{chunk.source_type}:{chunk.source_file}"
+        if key not in file_chunks:
+            file_chunks[key] = []
+        file_chunks[key].append((i, chunk))
+
+    # Assign IDs within each file
+    result = list(chunks)  # Copy to avoid modifying original
+    for key, indexed_chunks in file_chunks.items():
+        for file_idx, (original_idx, chunk) in enumerate(indexed_chunks):
+            chunk_id = generate_chunk_id(
+                project=project,
+                source_type=chunk.source_type,
+                source_file=chunk.source_file,
+                chunk_index=file_idx,
+                content=chunk.content,
+            )
+            result[original_idx] = replace(chunk, chunk_id=chunk_id)
+
+    return result
+
+
+def chunk_single_file(
+    file_path: Path,
+    file_type: str,
+    base_path: Path,
+    project: str = "sol",
+    max_tokens: int = 1000,
+) -> list[Chunk]:
+    """
+    Chunk a single file and assign chunk IDs.
+
+    This is used for incremental indexing to process individual files.
+
+    Args:
+        file_path: Absolute path to the file
+        file_type: Type of file ("rust", "simd", "docs")
+        base_path: Base path for relative path calculation
+        project: Project identifier for chunk IDs
+        max_tokens: Maximum tokens per chunk
+
+    Returns:
+        List of chunks with assigned chunk IDs
+    """
+    chunks = []
+
+    if file_type == "simd":
+        raw_chunks = chunk_simd(file_path, base_path)
+    elif file_type == "docs":
+        raw_chunks = chunk_markdown(file_path, base_path, "docs")
+    elif file_type == "rust":
+        # For Rust, we expect pre-compiled items, not raw files
+        # This should be handled via chunk_rust_items
+        return []
+    else:
+        return []
+
+    # Split large chunks
+    for chunk in raw_chunks:
+        chunks.extend(split_large_chunk(chunk, max_tokens))
+
+    # Assign chunk IDs
+    return _assign_chunk_ids(chunks, project)
 
 
 if __name__ == "__main__":
