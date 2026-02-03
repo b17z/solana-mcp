@@ -283,7 +283,6 @@ The official [mcp.solana.com](https://mcp.solana.com) is documentation-focused.
 This implementation:
 - Indexes **source code** from multiple validator clients
 - Parses **Rust and C** with tree-sitter
-- Tracks **client diversity** and stake distribution
 - Provides **incremental indexing** for fast updates
 
 ## License
