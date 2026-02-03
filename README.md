@@ -8,12 +8,12 @@ RAG-powered MCP server for Solana runtime, SIMDs, and validator client source co
 ## What It Does
 
 Indexes and searches across:
-- **Agave** - Reference Rust validator (Anza)
-- **Jito-Agave** - MEV-enabled fork (~70% of mainnet stake)
-- **Jito Programs** - On-chain tip distribution and MEV programs
-- **Firedancer** - Jump's C implementation (~22% with Frankendancer)
-- **SIMDs** - Solana Improvement Documents
-- **Alpenglow** - Future consensus protocol (not yet live)
+- [Agave](https://github.com/anza-xyz/agave) - Reference Rust validator (Anza)
+- [Jito-Solana](https://github.com/jito-foundation/jito-solana) - MEV-enabled fork
+- [Jito Programs](https://github.com/jito-foundation/jito-programs) - On-chain tip distribution and MEV programs
+- [Firedancer](https://github.com/firedancer-io/firedancer) - Jump's C implementation
+- [SIMDs](https://github.com/solana-foundation/solana-improvement-documents) - Solana Improvement Documents
+- [Alpenglow](https://github.com/anza-xyz/alpenglow) - Future consensus protocol (not yet live)
 
 ## Installation
 
@@ -166,12 +166,13 @@ When running as an MCP server:
 
 ## Validator Clients
 
-| Client | Language | Stake | Notes |
-|--------|----------|-------|-------|
-| Jito-Agave | Rust | ~70% | MEV-enabled fork |
-| Frankendancer | C+Rust | ~22% | Firedancer networking + Agave runtime |
-| Agave | Rust | ~8% | Reference implementation (Anza) |
-| Firedancer | C | - | Full independent implementation (Jump) |
+| Client | Language | Notes |
+|--------|----------|-------|
+| [Jito-Solana](https://github.com/jito-foundation/jito-solana) | Rust | MEV-enabled fork |
+| [Frankendancer](https://github.com/firedancer-io/firedancer) | C+Rust | Firedancer networking + Agave runtime |
+| [Agave](https://github.com/anza-xyz/agave) | Rust | Reference implementation (Anza) |
+| [Firedancer](https://github.com/firedancer-io/firedancer) | C | Full independent implementation (Jump) |
+| [Sig](https://github.com/Syndica/sig) | Zig | Zig implementation (Syndica) |
 
 ## Project Structure
 
