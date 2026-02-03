@@ -139,15 +139,6 @@ The `sol_expert_guidance` tool provides curated knowledge on:
 - `bundles` - Atomic transaction bundles
 - `tips` - Tip distribution to validators/stakers
 
-## Solana vs Ethereum
-
-| Aspect | Ethereum | Solana |
-|--------|----------|--------|
-| Spec format | Markdown + Python | Rust implementation |
-| Slashing | Yes (3 penalties) | No (indirect penalties only) |
-| Finality | ~13 min | ~12.8s → 150ms (Alpenglow) |
-| Consensus | Casper FFG | TowerBFT → Alpenglow |
-
 ## Development
 
 ```bash
