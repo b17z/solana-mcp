@@ -79,8 +79,6 @@ Solana validator clients indexed:
 | Agave | Rust | Reference implementation (Anza) |
 | Firedancer | C | Full independent implementation (Jump) |
 
-For current client diversity statistics, see [validators.app](https://www.validators.app/cluster-stats).
-
 ## Project Structure
 
 ```
