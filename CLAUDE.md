@@ -13,9 +13,16 @@ solana-mcp download    # Clone agave, SIMDs, alpenglow
 solana-mcp compile     # Extract Rust functions/types to JSON
 solana-mcp index       # Build vector embeddings in LanceDB
 
+# Incremental updates (fast)
+solana-mcp update      # Git pull + incremental re-index
+solana-mcp index       # Incremental by default
+solana-mcp index --full    # Force full rebuild
+solana-mcp index --dry-run # Preview what would change
+
 # Search
 solana-mcp search "stake warmup"
 solana-mcp status      # Check index status
+solana-mcp models      # List available embedding models
 ```
 
 ## MCP Tools
@@ -36,11 +43,13 @@ solana-mcp status      # Check index status
 src/solana_mcp/
 ├── server.py           # MCP server (FastMCP)
 ├── cli.py              # CLI commands
+├── config.py           # Configuration management
 ├── indexer/
 │   ├── downloader.py   # Git clone repos
 │   ├── compiler.py     # Extract Rust to JSON
-│   ├── chunker.py      # Rust/markdown chunking
-│   └── embedder.py     # Embeddings + LanceDB
+│   ├── chunker.py      # Rust/markdown chunking + chunk IDs
+│   ├── embedder.py     # Embeddings + LanceDB + IncrementalEmbedder
+│   └── manifest.py     # File tracking for incremental updates
 └── expert/
     └── guidance.py     # Curated interpretations
 ```
@@ -49,12 +58,30 @@ src/solana_mcp/
 
 ```
 ~/.solana-mcp/
+├── config.yaml         # Configuration (optional)
+├── manifest.json       # Index state tracking
 ├── agave/              # Cloned anza-xyz/agave
 ├── solana-improvement-documents/  # Cloned SIMDs
 ├── alpenglow/          # Cloned anza-xyz/alpenglow
 ├── compiled/           # JSON extracts
 └── lancedb/            # Vector index
 ```
+
+## Configuration
+
+Create `~/.solana-mcp/config.yaml` to customize:
+
+```yaml
+embedding:
+  model: "all-MiniLM-L6-v2"  # Or codesage/codesage-large
+  batch_size: 32
+
+chunking:
+  chunk_size: 1000
+  chunk_overlap: 200
+```
+
+Available models: `all-MiniLM-L6-v2`, `all-mpnet-base-v2`, `codesage/codesage-large`, `voyage:voyage-code-3`
 
 ## Key Differences from Ethereum MCP
 
@@ -70,6 +97,16 @@ pip install -e ".[dev]"
 pytest
 ruff check src/
 ```
+
+## Incremental Indexing
+
+See [docs/INCREMENTAL_INDEXING.md](docs/INCREMENTAL_INDEXING.md) for detailed documentation.
+
+Key concepts:
+- **Manifest**: Tracks file hashes and chunk IDs
+- **Chunk IDs**: Deterministic IDs based on content hash
+- **Change detection**: Fast mtime check, then hash verification
+- **Delta updates**: Only re-embed changed content
 
 ## Adding Expert Guidance
 
