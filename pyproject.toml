@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "solana-mcp"
+name = "sol-mcp"
 version = "0.2.0"
 description = "RAG-powered MCP server for Solana runtime and SIMDs"
 readme = "README.md"
