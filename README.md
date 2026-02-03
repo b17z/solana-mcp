@@ -168,11 +168,9 @@ ruff check src/
 The official [mcp.solana.com](https://mcp.solana.com) is documentation-focused.
 
 This implementation:
-- Indexes actual **source code** from multiple clients
+- Indexes **source code** from multiple clients
 - Parses **Rust and C** with tree-sitter
-- Tracks **client diversity** and stake distribution
-- Includes **expert guidance** from protocol research
-- Provides **constant/function lookup** with full source
+- Tracks **clients**
 
 ## License
 
