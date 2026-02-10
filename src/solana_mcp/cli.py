@@ -247,9 +247,19 @@ def index(ctx, full: bool, dry_run: bool, model_name: str | None):
             items = load_compiled_items(compiled_subdir)
             constants = load_compiled_constants(compiled_subdir)
 
-            repo_name = compiled_subdir.parts[-2] if len(compiled_subdir.parts) > 1 else "agave"
+            # Extract repo name and path prefix from directory structure
+            # e.g., compiled/agave/programs → repo_name="agave", path_prefix="programs"
+            rel_path = compiled_subdir.relative_to(compiled_dir)
+            rel_parts = rel_path.parts
+            repo_name = rel_parts[0] if rel_parts else "agave"
+            # Path prefix is everything after the repo name
+            path_prefix = "/".join(rel_parts[1:]) if len(rel_parts) > 1 else ""
+
             chunks = chunk_content(
-                items=items, constants=constants, repo_name=repo_name
+                items=items,
+                constants=constants,
+                repo_name=repo_name,
+                path_prefix=path_prefix,
             )
             all_chunks.extend(chunks)
             click.echo(f"  {len(chunks)} chunks")

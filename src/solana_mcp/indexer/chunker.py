@@ -29,8 +29,19 @@ class Chunk:
     chunk_id: str = ""  # Unique ID for incremental indexing
 
 
-def chunk_rust_item(item: ExtractedItem, repo_name: str = "agave") -> Chunk:
-    """Convert an extracted Rust item into a chunk."""
+def chunk_rust_item(
+    item: ExtractedItem,
+    repo_name: str = "agave",
+    path_prefix: str = "",
+) -> Chunk:
+    """Convert an extracted Rust item into a chunk.
+
+    Args:
+        item: Extracted code item
+        repo_name: Repository name (e.g., "agave", "firedancer")
+        path_prefix: Path prefix to prepend for full repo-relative path
+                    (e.g., "programs" for agave/programs subdirectory)
+    """
     # Build content with context
     parts = []
 
@@ -47,10 +58,15 @@ def chunk_rust_item(item: ExtractedItem, repo_name: str = "agave") -> Chunk:
 
     content = "\n".join(parts)
 
+    # Construct full repo-relative path
+    source_file = item.file_path
+    if path_prefix:
+        source_file = f"{path_prefix}/{source_file}"
+
     return Chunk(
         content=content,
         source_type="rust",
-        source_file=item.file_path,
+        source_file=source_file,
         source_name=item.name,
         line_number=item.line_number,
         metadata={
@@ -62,8 +78,18 @@ def chunk_rust_item(item: ExtractedItem, repo_name: str = "agave") -> Chunk:
     )
 
 
-def chunk_rust_constant(const: ExtractedConstant, repo_name: str = "agave") -> Chunk:
-    """Convert an extracted constant into a chunk."""
+def chunk_rust_constant(
+    const: ExtractedConstant,
+    repo_name: str = "agave",
+    path_prefix: str = "",
+) -> Chunk:
+    """Convert an extracted constant into a chunk.
+
+    Args:
+        const: Extracted constant
+        repo_name: Repository name
+        path_prefix: Path prefix for full repo-relative path
+    """
     parts = []
 
     if const.doc_comment:
@@ -74,10 +100,15 @@ def chunk_rust_constant(const: ExtractedConstant, repo_name: str = "agave") -> C
 
     content = "\n".join(parts)
 
+    # Construct full repo-relative path
+    source_file = const.file_path
+    if path_prefix:
+        source_file = f"{path_prefix}/{source_file}"
+
     return Chunk(
         content=content,
         source_type="rust",
-        source_file=const.file_path,
+        source_file=source_file,
         source_name=const.name,
         line_number=const.line_number,
         metadata={
@@ -250,15 +281,23 @@ def chunk_rust_items(
     items: list[ExtractedItem],
     constants: list[ExtractedConstant],
     repo_name: str = "agave",
+    path_prefix: str = "",
 ) -> list[Chunk]:
-    """Chunk all Rust items and constants."""
+    """Chunk all Rust items and constants.
+
+    Args:
+        items: List of extracted code items
+        constants: List of extracted constants
+        repo_name: Repository name
+        path_prefix: Path prefix for full repo-relative paths
+    """
     chunks = []
 
     for item in items:
-        chunks.append(chunk_rust_item(item, repo_name))
+        chunks.append(chunk_rust_item(item, repo_name, path_prefix))
 
     for const in constants:
-        chunks.append(chunk_rust_constant(const, repo_name))
+        chunks.append(chunk_rust_constant(const, repo_name, path_prefix))
 
     return chunks
 
@@ -323,6 +362,7 @@ def chunk_content(
     simd_dir: Path | None = None,
     docs_dir: Path | None = None,
     repo_name: str = "agave",
+    path_prefix: str = "",
     max_tokens: int = 1000,
 ) -> list[Chunk]:
     """
@@ -334,6 +374,7 @@ def chunk_content(
         simd_dir: Directory containing SIMDs
         docs_dir: Directory containing documentation
         repo_name: Name of the source repo
+        path_prefix: Path prefix for full repo-relative paths (e.g., "programs")
         max_tokens: Maximum tokens per chunk
 
     Returns:
@@ -344,7 +385,7 @@ def chunk_content(
     # Chunk Rust items
     if items or constants:
         rust_chunks = chunk_rust_items(
-            items or [], constants or [], repo_name
+            items or [], constants or [], repo_name, path_prefix
         )
         for chunk in rust_chunks:
             all_chunks.extend(split_large_chunk(chunk, max_tokens))

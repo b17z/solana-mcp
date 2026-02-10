@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from .expert.guidance import get_expert_guidance, list_guidance_topics
 from .indexer.compiler import lookup_constant, lookup_function
-from .indexer.downloader import DEFAULT_DATA_DIR, list_downloaded_repos
+from .indexer.downloader import DEFAULT_DATA_DIR, REPOS, list_downloaded_repos
 from .indexer.embedder import DEPS_AVAILABLE, get_index_stats, search
 from .models import (
     ClientLookupInput,
@@ -40,6 +40,60 @@ server = Server("solana-mcp")
 
 # Data directory
 DATA_DIR = DEFAULT_DATA_DIR
+
+
+def _source_to_github_url(
+    source_file: str,
+    line_number: int | None = None,
+    repo: str | None = None,
+) -> str | None:
+    """
+    Convert a source file path to a GitHub URL.
+
+    Args:
+        source_file: Repo-relative file path (e.g., programs/vote/src/lib.rs)
+        line_number: Optional line number to link to
+        repo: Repository name from metadata (e.g., "agave", "firedancer")
+
+    Returns:
+        GitHub blob URL or None if repo not recognized
+    """
+    if not source_file:
+        return None
+
+    # If repo is provided in metadata, use it to construct the URL
+    if repo and repo in REPOS:
+        repo_config = REPOS[repo]
+        base_url = repo_config["url"].rstrip(".git")
+        branch = repo_config["branch"]
+
+        url = f"{base_url}/blob/{branch}/{source_file}"
+        if line_number:
+            url += f"#L{line_number}"
+        return url
+
+    # Try to match by first path component (for SIMD paths like
+    # "solana-improvement-documents/proposals/0123.md")
+    parts = source_file.split("/")
+    if not parts:
+        return None
+
+    repo_name = parts[0]
+    if repo_name not in REPOS:
+        return None
+
+    repo_config = REPOS[repo_name]
+    base_url = repo_config["url"].rstrip(".git")
+    branch = repo_config["branch"]
+
+    # Build the path within the repo
+    file_path = "/".join(parts[1:])
+
+    url = f"{base_url}/blob/{branch}/{file_path}"
+    if line_number:
+        url += f"#L{line_number}"
+
+    return url
 
 
 def _safe_path(base: Path, user_path: str) -> Path:
@@ -456,6 +510,16 @@ async def handle_search(
         )
         output.append(f"   File: {result['source_file']}:{result['line_number']}")
 
+        # Add GitHub URL (use repo from metadata if available)
+        metadata = result.get('metadata', {})
+        github_url = _source_to_github_url(
+            result['source_file'],
+            result.get('line_number'),
+            repo=metadata.get('repo'),
+        )
+        if github_url:
+            output.append(f"   Source: {github_url}")
+
         # Include content
         content = result["content"]
         if len(content) > 500:
@@ -474,13 +538,29 @@ async def handle_grep_constant(name: str) -> list[TextContent]:
         if (subdir / "index.json").exists():
             result = lookup_constant(name, subdir)
             if result:
+                # Extract repo and path_prefix from subdir
+                # e.g., compiled/agave/programs → repo="agave", prefix="programs"
+                rel_path = subdir.relative_to(compiled_dir)
+                rel_parts = rel_path.parts
+                repo_name = rel_parts[0] if rel_parts else None
+                path_prefix = "/".join(rel_parts[1:]) if len(rel_parts) > 1 else ""
+
+                # Construct full repo-relative path
+                full_path = f"{path_prefix}/{result.file_path}" if path_prefix else result.file_path
+
                 output = [
                     f"# {result.name}",
                     f"Value: {result.value}",
                 ]
                 if result.type_annotation:
                     output.append(f"Type: {result.type_annotation}")
-                output.append(f"File: {result.file_path}:{result.line_number}")
+                output.append(f"File: {full_path}:{result.line_number}")
+
+                # Add GitHub URL
+                github_url = _source_to_github_url(full_path, result.line_number, repo=repo_name)
+                if github_url:
+                    output.append(f"Source: {github_url}")
+
                 if result.doc_comment:
                     output.append(f"\nDoc: {result.doc_comment}")
 
@@ -500,10 +580,25 @@ async def handle_analyze_function(name: str) -> list[TextContent]:
         if (subdir / "index.json").exists():
             result = lookup_function(name, subdir)
             if result:
+                # Extract repo and path_prefix from subdir
+                rel_path = subdir.relative_to(compiled_dir)
+                rel_parts = rel_path.parts
+                repo_name = rel_parts[0] if rel_parts else None
+                path_prefix = "/".join(rel_parts[1:]) if len(rel_parts) > 1 else ""
+
+                # Construct full repo-relative path
+                full_path = f"{path_prefix}/{result.file_path}" if path_prefix else result.file_path
+
                 output = [
                     f"# {result.signature}",
-                    f"File: {result.file_path}:{result.line_number}",
+                    f"File: {full_path}:{result.line_number}",
                 ]
+
+                # Add GitHub URL
+                github_url = _source_to_github_url(full_path, result.line_number, repo=repo_name)
+                if github_url:
+                    output.append(f"Source: {github_url}")
+
                 if result.doc_comment:
                     output.append(f"\n/// {result.doc_comment}\n")
                 output.append(f"\n```rust\n{result.body}\n```")
